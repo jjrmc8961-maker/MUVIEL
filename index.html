@@ -1822,22 +1822,40 @@
             localStorage.setItem(DB_KEY, JSON.stringify(db));
         }
 
-        // --- 2. INICIALIZACIÓN ---
-document.addEventListener('DOMContentLoaded', () => {
-    goToHub();
-    updateLiveTime();
-    setInterval(updateLiveTime, 30000);
-    
-    // Solicitar permiso de notificaciones
-    if ("Notification" in window && Notification.permission !== "granted") {
-        Notification.requestPermission();
-    }
+         // --- 2. INICIALIZACIÓN ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            goToHub();
+            updateLiveTime();
+            setInterval(updateLiveTime, 10000);
+            
+            // Solicitar permisos de notificación nativa y web
+            solicitarPermisosCompletos();
 
-    // Revisar medicamentos cada 30 segundos
-    checkMedicationAlerts();
-    setInterval(checkMedicationAlerts, 30000);
-});
+            // Ejecutar revisión inmediata y luego cada 15 segundos
+            setTimeout(checkMedicationAlerts, 2000);
+            setInterval(checkMedicationAlerts, 15000);
+        });
 
+        async function solicitarPermisosCompletos() {
+            try {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                    await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+                    // Crear canal prioritario para Android 8+
+                    await window.Capacitor.Plugins.LocalNotifications.createChannel({
+                        id: 'muviel_meds',
+                        name: 'Alertas de Medicamentos Muviel',
+                        description: 'Recordatorios para administración de fármacos',
+                        importance: 5,
+                        visibility: 1,
+                        vibration: true
+                    });
+                } else if ("Notification" in window && Notification.permission !== "granted") {
+                    await Notification.requestPermission();
+                }
+            } catch (err) {
+                console.warn("Permisos de notificación no disponibles en este entorno:", err);
+            }
+        }
 
         function updateLiveTime() {
             const now = new Date();
@@ -1846,43 +1864,102 @@ document.addEventListener('DOMContentLoaded', () => {
             const repDate = document.getElementById('report-date');
             if (repDate) repDate.textContent = now.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         }
+
         let triggeredAlertsToday = {};
 
-function checkMedicationAlerts() {
-    const p = getActivePatient();
-    if (!p || !p.medications) return;
+        function checkMedicationAlerts() {
+            if (!db || !db.patients || !db.patients.length) return;
 
-    const now = new Date();
-    const currentHourMin = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const todayKey = now.toDateString();
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const currentHourMin = hh + ':' + mm;
+            const todayKey = now.toDateString();
 
-    p.medications.forEach(med => {
-        if (med.status !== "activo" || !med.scheduleTimes) return;
+            // Revisa los medicamentos de TODOS los pacientes registrados, no solo del paciente en pantalla
+            db.patients.forEach(patient => {
+                if (!patient.medications || !Array.isArray(patient.medications)) return;
 
-        med.scheduleTimes.forEach(time => {
-            const alertKey = `${todayKey}-${med.id}-${time}`;
-            
-            if (time === currentHourMin && !triggeredAlertsToday[alertKey]) {
-                triggeredAlertsToday[alertKey] = true;
-                dispararNotificacionMed(med.name, time, p.name);
+                patient.medications.forEach(med => {
+                    if (med.status !== "activo" || !med.scheduleTimes || med.stock <= 0) return;
+
+                    med.scheduleTimes.forEach(time => {
+                        const alertKey = `${todayKey}-${patient.id}-${med.id}-${time}`;
+
+                        if (time === currentHourMin && !triggeredAlertsToday[alertKey]) {
+                            triggeredAlertsToday[alertKey] = true;
+                            dispararNotificacionMed(med.name, time, patient.name);
+                        }
+                    });
+                });
+            });
+        }
+
+        async function dispararNotificacionMed(medName, hora, paciente) {
+            const titulo = "⏰ Administrar: " + medName;
+            const cuerpo = "Hora: " + hora + " | Paciente: " + paciente + ". Confirmar administración.";
+
+            // 1. Notificación Nativa Android (Capacitor)
+            try {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                    await window.Capacitor.Plugins.LocalNotifications.schedule({
+                        notifications: [
+                            {
+                                id: Math.floor(Math.random() * 100000),
+                                title: titulo,
+                                body: cuerpo,
+                                channelId: 'muviel_meds',
+                                schedule: { at: new Date(Date.now() + 200) },
+                                sound: 'beep.wav',
+                                smallIcon: 'res://drawable/ic_stat_name'
+                            }
+                        ]
+                    });
+                } else if (swRegistration && swRegistration.showNotification) {
+                    swRegistration.showNotification(titulo, {
+                        body: cuerpo,
+                        icon: 'https://cdn-icons-png.flaticon.com/512/2966/2966327.png',
+                        vibrate: [200, 100, 200]
+                    });
+                }
+            } catch (e) {
+                console.warn("Fallo al disparar notificación nativa:", e);
             }
-        });
-    });
-}
 
-function dispararNotificacionMed(medName, hora, paciente) {
-    const titulo = `⏰ Administrar: ${medName}`;
-    const opciones = {
-        body: `Hora: ${hora} | Paciente: ${paciente}. Registra la administración.`,
-        vibrate: [200, 100, 200]
-    };
+            // 2. Banner visual inyectado directamente en el DOM (Funciona en TrebEdit y APK sin ser bloqueado)
+            mostrarAvisoVisualEnPantalla(titulo, cuerpo);
+        }
 
-    if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(titulo, opciones);
-    }
+        function mostrarAvisoVisualEnPantalla(titulo, mensaje) {
+            const banner = document.createElement("div");
+            banner.style.position = "fixed";
+            banner.style.top = "16px";
+            banner.style.left = "50%";
+            banner.style.transform = "translateX(-50%)";
+            banner.style.width = "90%";
+            banner.style.maxWidth = "420px";
+            banner.style.backgroundColor = "#1e3a8a";
+            banner.style.color = "#ffffff";
+            banner.style.padding = "16px 20px";
+            banner.style.borderRadius = "16px";
+            banner.style.boxShadow = "0 10px 30px rgba(0,0,0,0.35)";
+            banner.style.zIndex = "999999";
+            banner.style.fontFamily = "inherit";
+            banner.style.animation = "fadeIn 0.3s ease";
+            
+            banner.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <strong style="font-size:15px; color:#93c5fd;"><i class="fa-solid fa-bell"></i> ${titulo}</strong>
+                    <button style="background:none; border:none; color:#fff; font-size:18px; cursor:pointer;" onclick="this.parentElement.parentElement.remove()">✕</button>
+                </div>
+                <div style="font-size:13px; line-height:1.4;">${mensaje}</div>
+            `;
+            document.body.appendChild(banner);
 
-    alert(`⚠️ ATENCIÓN CLÍNICA:\nEs hora de administrar ${medName} (${hora}) a ${paciente}.`);
-}
+            setTimeout(() => {
+                if (banner && banner.parentElement) banner.remove();
+            }, 12000);
+        }
 
 
         // --- 3. NAVEGACIÓN ---
