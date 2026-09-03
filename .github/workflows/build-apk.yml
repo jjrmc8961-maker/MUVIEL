@@ -42,12 +42,18 @@ jobs:
           }
           EOF
 
-      - name: Instalar Capacitor y preparar proyecto Android
+      - name: Instalar dependencias y configurar Android
         run: |
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/local-notifications
           npx cap add android
           npx cap sync android
+
+      - name: Habilitar permisos de notificaciones en AndroidManifest
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          # Inyectar permisos de notificaciones y alarmas exactas
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST
 
       - name: Compilar APK con Gradle
         run: |
@@ -60,4 +66,3 @@ jobs:
         with:
           name: Muviel-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
-
