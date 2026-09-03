@@ -45,8 +45,24 @@ jobs:
       - name: Instalar dependencias y configurar Android
         run: |
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/local-notifications
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/local-notifications @capacitor/assets
           npx cap add android
+
+      - name: Generar iconos oficiales de la app
+        run: |
+          if [ -f "icon.png" ]; then
+            mkdir -p assets
+            cp icon.png assets/icon.png
+            cp icon.png assets/icon-only.png
+            cp icon.png assets/icon-foreground.png
+            cp icon.png assets/icon-background.png
+            npx @capacitor/assets generate --android
+          else
+            echo "Aviso: No se encontró icon.png en la raíz, se usarán iconos por defecto."
+          fi
+
+      - name: Sincronizar proyecto Android
+        run: |
           npx cap sync android
 
       - name: Habilitar permisos de notificaciones en AndroidManifest
