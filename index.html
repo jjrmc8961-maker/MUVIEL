@@ -1823,11 +1823,21 @@
         }
 
         // --- 2. INICIALIZACIÓN ---
-        document.addEventListener('DOMContentLoaded', () => {
-            goToHub();
-            updateLiveTime();
-            setInterval(updateLiveTime, 30000);
-        });
+document.addEventListener('DOMContentLoaded', () => {
+    goToHub();
+    updateLiveTime();
+    setInterval(updateLiveTime, 30000);
+    
+    // Solicitar permiso de notificaciones
+    if ("Notification" in window && Notification.permission !== "granted") {
+        Notification.requestPermission();
+    }
+
+    // Revisar medicamentos cada 30 segundos
+    checkMedicationAlerts();
+    setInterval(checkMedicationAlerts, 30000);
+});
+
 
         function updateLiveTime() {
             const now = new Date();
@@ -1836,6 +1846,44 @@
             const repDate = document.getElementById('report-date');
             if (repDate) repDate.textContent = now.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         }
+        let triggeredAlertsToday = {};
+
+function checkMedicationAlerts() {
+    const p = getActivePatient();
+    if (!p || !p.medications) return;
+
+    const now = new Date();
+    const currentHourMin = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const todayKey = now.toDateString();
+
+    p.medications.forEach(med => {
+        if (med.status !== "activo" || !med.scheduleTimes) return;
+
+        med.scheduleTimes.forEach(time => {
+            const alertKey = `${todayKey}-${med.id}-${time}`;
+            
+            if (time === currentHourMin && !triggeredAlertsToday[alertKey]) {
+                triggeredAlertsToday[alertKey] = true;
+                dispararNotificacionMed(med.name, time, p.name);
+            }
+        });
+    });
+}
+
+function dispararNotificacionMed(medName, hora, paciente) {
+    const titulo = `⏰ Administrar: ${medName}`;
+    const opciones = {
+        body: `Hora: ${hora} | Paciente: ${paciente}. Registra la administración.`,
+        vibrate: [200, 100, 200]
+    };
+
+    if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(titulo, opciones);
+    }
+
+    alert(`⚠️ ATENCIÓN CLÍNICA:\nEs hora de administrar ${medName} (${hora}) a ${paciente}.`);
+}
+
 
         // --- 3. NAVEGACIÓN ---
         function switchTab(paneId) {
@@ -2413,6 +2461,25 @@
                 alert(`${med.name} reactivado en tratamientos con stock de ${med.stock} unidades.`);
             }
         }
+        function suspenderMedicamentoManual(id) {
+    const p = getActivePatient();
+    if (!p || !p.medications) return;
+
+    const med = p.medications.find(m => m.id === id);
+    if (!med) return;
+
+    const motivo = prompt(`¿Motivo de suspensión de ${med.name}?\n(Ej. Fin de tratamiento, cambio de dosis, indicación médica):`);
+    if (motivo === null) return;
+
+    med.status = 'suspendido';
+    med.suspensionReason = motivo.trim() || 'Indicación médica / Fin de esquema';
+    med.suspensionDate = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    saveDatabase();
+    renderMedications();
+    alert(`✅ ${med.name} ha sido suspendido y movido a la bitácora.`);
+}
+
 
         function openAdverseModal(id) {
             const p = getActivePatient();
@@ -2520,6 +2587,10 @@
                                 <button onclick="openAdverseModal(${m.id})" style="background:#fff1f2; color:#be123c; border:1px solid #fecdd3; border-radius:var(--radius-sm); padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer;">
                                     <i class="fa-solid fa-triangle-exclamation"></i> Reportar Reacción
                                 </button>
+                                 <button onclick="suspenderMedicamentoManual(${m.id})" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: var(--radius-sm); padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; margin-right: 6px;">
+    <i class="fa-solid fa-ban"></i> Suspender
+</button>
+
                             </div>
                         </div>
                     `;
@@ -2543,7 +2614,11 @@
                                             <div>
                                                 <strong style="font-size:13px; color:var(--text-main);">${med.name}</strong>
                                                 <div style="font-size:11px; color:${isSuspended ? '#b91c1c' : 'var(--text-muted)'}; margin-top:2px;">
-                                                    ${isSuspended ? '<i class="fa-solid fa-triangle-exclamation"></i> Suspensión preventiva por reacción' : '<i class="fa-solid fa-box-open"></i> Stock agotado (0 unidades)'}
+                                                ${med.status === 'suspendido_reaccion' 
+    ? '<i class="fa-solid fa-triangle-exclamation"></i> Suspensión por reacción' 
+    : (med.status === 'suspendido' 
+        ? `<i class="fa-solid fa-ban"></i> Suspendido (${med.suspensionReason || 'Indicación médica'})` 
+        : '<i class="fa-solid fa-box-open"></i> Stock agotado')}
                                                 </div>
                                             </div>
                                             <button class="btn-secondary" style="padding:5px 10px; font-size:11px; font-weight:700;" onclick="refillMedication(${med.id})">
