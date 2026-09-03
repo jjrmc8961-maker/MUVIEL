@@ -24,17 +24,23 @@ jobs:
           distribution: 'zulu'
           java-version: 17
 
-      - name: Renombrar indice a index si aplica
+      - name: Preparar carpeta web
         run: |
+          mkdir -p www
+          # Renombrar si el navegador tradujo el archivo
           if [ -f "indice.html" ] && [ ! -f "index.html" ]; then
             mv indice.html index.html
           fi
+          # Copiar archivos a www
+          cp index.html www/
+          [ -f "manifest.json" ] && cp manifest.json www/ || true
+          [ -f "sw.js" ] && cp sw.js www/ || true
 
-      - name: Instalar Capacitor y dependencias
+      - name: Instalar Capacitor y configurar proyecto
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "Muviel" "com.muviel.app" --web-dir .
+          npx cap init "Muviel" "com.muviel.app" --web-dir www
           npx cap add android
 
       - name: Sincronizar archivos web a Android
@@ -52,4 +58,3 @@ jobs:
         with:
           name: Muviel-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
-
