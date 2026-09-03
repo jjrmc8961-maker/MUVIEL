@@ -18,43 +18,40 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java JDK
+      - name: Configurar Java JDK 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: 17
+          distribution: 'temurin'
+          java-version: '21'
 
       - name: Preparar carpeta web
         run: |
           mkdir -p www
-          # Renombrar si el navegador tradujo el archivo
+          # Renombrar indice.html si fue traducido
           if [ -f "indice.html" ] && [ ! -f "index.html" ]; then
             mv indice.html index.html
           fi
-          # Copiar archivos a www
+          # Copiar archivos
           cp index.html www/
           [ -f "manifest.json" ] && cp manifest.json www/ || true
           [ -f "sw.js" ] && cp sw.js www/ || true
 
-      - name: Instalar Capacitor y configurar proyecto
+      - name: Instalar Capacitor y configurar plataforma Android
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap init "Muviel" "com.muviel.app" --web-dir www
           npx cap add android
-
-      - name: Sincronizar archivos web a Android
-        run: |
           npx cap sync android
 
-      - name: Compilar APK (Debug)
+      - name: Compilar APK Debug
         run: |
           cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Subir APK como artefacto
+      - name: Subir APK generado
         uses: actions/upload-artifact@v4
         with:
           name: Muviel-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/*.apk
