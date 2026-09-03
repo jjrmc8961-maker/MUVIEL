@@ -13,43 +13,39 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Configurar Java JDK 17
+      - name: Configurar Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Preparar carpeta web y configuracion
         run: |
           mkdir -p www
-          # Corregir nombre si fue traducido
           if [ -f "indice.html" ] && [ ! -f "index.html" ]; then
             mv indice.html index.html
           fi
-          # Copiar recursos a la carpeta www
           cp index.html www/
           [ -f "manifest.json" ] && cp manifest.json www/ || true
           [ -f "sw.js" ] && cp sw.js www/ || true
 
-          # Crear configuracion oficial de Capacitor
           cat << 'EOF' > capacitor.config.json
           {
             "appId": "com.muviel.app",
             "appName": "Muviel",
-            "webDir": "www",
-            "bundledWebRuntime": false
+            "webDir": "www"
           }
           EOF
 
       - name: Instalar Capacitor y preparar proyecto Android
         run: |
           npm init -y
-          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap add android
           npx cap sync android
 
@@ -64,3 +60,4 @@ jobs:
         with:
           name: Muviel-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
+
